@@ -3,10 +3,10 @@ const express = require('express');
 const cors = require('cors');
 
 // Import all route modules
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/user');
-const adminRoutes = require('./routes/admin');
-const withdrawRoutes = require('./routes/withdraw');
+const authRoutes = require('./routes/auth');          // login, register, verify-otp
+const userRoutes = require('./routes/user');          // /me, /update-profile
+const adminRoutes = require('./routes/admin');        // admin users, otps, balance update
+const withdrawRoutes = require('./routes/withdraw');  // /withdraw
 const transactionsRoutes = require('./routes/transactions');
 const investRoutes = require('./routes/invest');
 const supportRoutes = require('./routes/support');
@@ -20,16 +20,15 @@ const PORT = process.env.PORT || 3000;
 const allowedOrigins = [
   'http://localhost:5500',
   'http://localhost:3000',
-  'https://resplendent-platypus-de88a4.netlify.app',   // old frontend
-  'https://precious-cobbler-0a0716.netlify.app',       // old frontend
-  'https://driplord-001-github-io.onrender.com',       // Render static
-  'https://adorable-sprite-692f2f.netlify.app',        // ✅ NEW frontend
-  process.env.FRONTEND_URL                              // fallback from environment
+  'https://resplendent-platypus-de88a4.netlify.app',
+  'https://precious-cobbler-0a0716.netlify.app',
+  'https://driplord-001-github-io.onrender.com',
+  'https://adorable-sprite-692f2f.netlify.app',
+  process.env.FRONTEND_URL
 ].filter(Boolean);
 
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
@@ -56,7 +55,7 @@ app.use((req, res, next) => {
 });
 
 // ============================================================
-// ROUTES
+// ROUTES – Mount everything under /api
 // ============================================================
 app.use('/api', authRoutes);          // /api/login, /api/register, /api/verify-otp
 app.use('/api', userRoutes);          // /api/me, /api/update-profile
