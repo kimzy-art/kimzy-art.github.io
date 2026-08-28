@@ -3,7 +3,7 @@ const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const { supabaseAdmin } = require('../supabase/client');
 
-// Admin middleware (hardcoded email check)
+// Admin middleware – checks for admin@gmail.com
 const isAdmin = async (req, res, next) => {
   const { data: user, error } = await supabaseAdmin
     .from('users')
@@ -31,7 +31,6 @@ router.get('/users', verifyToken, isAdmin, async (req, res) => {
     return res.status(500).json({ message: 'Failed to fetch users.' });
   }
 
-  // Determine online status (last_active within 5 minutes)
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   const usersWithStatus = users.map(user => ({
     ...user,
@@ -56,7 +55,7 @@ router.get('/otps', verifyToken, isAdmin, async (req, res) => {
   res.json({ otps });
 });
 
-// PATCH /admin/users/:userId/balance – update user balance and log transaction
+// PATCH /admin/users/:userId/balance – update user balance
 router.patch('/users/:userId/balance', verifyToken, isAdmin, async (req, res) => {
   const { userId } = req.params;
   const { amount } = req.body;
@@ -67,7 +66,6 @@ router.patch('/users/:userId/balance', verifyToken, isAdmin, async (req, res) =>
 
   const newBalance = parseFloat(amount);
 
-  // Get current balance
   const { data: user, error: fetchError } = await supabaseAdmin
     .from('users')
     .select('balance')
@@ -81,7 +79,6 @@ router.patch('/users/:userId/balance', verifyToken, isAdmin, async (req, res) =>
   const oldBalance = parseFloat(user.balance || 0);
   const difference = newBalance - oldBalance;
 
-  // Update balance
   const { data: updated, error: updateError } = await supabaseAdmin
     .from('users')
     .update({ 
@@ -97,7 +94,6 @@ router.patch('/users/:userId/balance', verifyToken, isAdmin, async (req, res) =>
     return res.status(500).json({ message: 'Failed to update balance.' });
   }
 
-  // Log transaction if difference is non-zero
   if (difference !== 0) {
     const { error: txError } = await supabaseAdmin
       .from('transactions')
@@ -112,7 +108,6 @@ router.patch('/users/:userId/balance', verifyToken, isAdmin, async (req, res) =>
 
     if (txError) {
       console.error('Transaction log error:', txError);
-      // Non-critical; do not revert balance, but log error.
     }
   }
 
