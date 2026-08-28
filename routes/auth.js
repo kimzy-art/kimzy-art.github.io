@@ -11,13 +11,13 @@ const axios = require('axios');
 const sendBrevoEmail = async (to, subject, htmlContent) => {
   try {
     const apiKey = process.env.BREVO_API_KEY;
-    const fromEmail = process.env.BREVO_FROM_EMAIL || 'FX SMARTBULL <jimmydarts404@gmail.com>';
+    const fromEmail = process.env.BREVO_FROM_EMAIL || 'Cresta Markets <jimmydarts404@gmail.com>';
     const fromAddress = fromEmail.split('<')[1]?.replace('>', '') || fromEmail;
 
     const response = await axios.post(
       'https://api.brevo.com/v3/smtp/email',
       {
-        sender: { name: 'FX SMARTBULL', email: fromAddress },
+        sender: { name: 'Cresta Markets', email: fromAddress },
         to: [{ email: to }],
         subject: subject,
         htmlContent: htmlContent
@@ -85,24 +85,24 @@ router.post('/register', async (req, res) => {
 
   // Send OTP via Brevo
   const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0A0A0A; color: #D4AF37; padding: 30px; border-radius: 16px; border: 1px solid #D4AF37;">
+    <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0A0A0A; color: #3B82F6; padding: 30px; border-radius: 16px; border: 1px solid #3B82F6;">
       <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="color: #D4AF37; font-weight: 800; font-size: 28px; letter-spacing: 2px; margin: 0;">FX SMARTBULL</h1>
-        <hr style="border-color: rgba(212,175,55,0.2);" />
+        <h1 style="color: #3B82F6; font-weight: 800; font-size: 28px; letter-spacing: 2px; margin: 0;">Cresta Markets</h1>
+        <hr style="border-color: rgba(59,130,246,0.2);" />
       </div>
       <p style="color: #ffffff; font-size: 16px;">Hello ${firstName},</p>
       <p style="color: #ffffff;">Your verification code is:</p>
-      <div style="text-align: center; font-size: 40px; font-weight: bold; letter-spacing: 6px; background: rgba(212,175,55,0.08); padding: 18px; border-radius: 12px; border: 1px solid #D4AF37; color: #D4AF37; margin: 20px 0;">
+      <div style="text-align: center; font-size: 40px; font-weight: bold; letter-spacing: 6px; background: rgba(59,130,246,0.08); padding: 18px; border-radius: 12px; border: 1px solid #3B82F6; color: #3B82F6; margin: 20px 0;">
         ${otp}
       </div>
       <p style="color: #ffffff;">This code expires in <strong>10 minutes</strong>.</p>
       <p style="color: #999; font-size: 14px;">If you didn't request this, please ignore this email.</p>
-      <hr style="border-color: rgba(212,175,55,0.1);" />
-      <p style="color: #666; font-size: 12px; text-align: center;">© 2026 FX SMARTBULL. All rights reserved.</p>
+      <hr style="border-color: rgba(59,130,246,0.1);" />
+      <p style="color: #666; font-size: 12px; text-align: center;">© 2026 Cresta Markets. All rights reserved.</p>
     </div>
   `;
 
-  const sent = await sendBrevoEmail(email, 'Your FX SMARTBULL Verification Code', htmlContent);
+  const sent = await sendBrevoEmail(email, 'Your Cresta Markets Verification Code', htmlContent);
   if (!sent) {
     return res.status(500).json({ message: 'Failed to send OTP email. Please try again.' });
   }
