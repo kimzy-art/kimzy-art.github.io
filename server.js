@@ -23,7 +23,7 @@ const allowedOrigins = [
   'https://resplendent-platypus-de88a4.netlify.app',   // old frontend
   'https://precious-cobbler-0a0716.netlify.app',       // old frontend
   'https://driplord-001-github-io.onrender.com',       // Render static
-  'https://kimzzy-static-site.netlify.app',        // ✅ NEW frontend
+  'https://kimzy-cresta-market.netlify.app',        // ✅ NEW frontend
   process.env.FRONTEND_URL                              // fallback from environment
 ].filter(Boolean);
 
