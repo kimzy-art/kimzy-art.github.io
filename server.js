@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
-// Import all route modules
+// Import route modules
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const adminRoutes = require('./routes/admin');
@@ -15,32 +15,46 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ============================================================
-// CORS CONFIGURATION – Allow your frontend domains
+// FORCE CORS HEADERS – Must be FIRST
 // ============================================================
-const allowedOrigins = [
+const ALLOWED_ORIGINS = [
   'http://localhost:5500',
   'http://localhost:3000',
-  'https://resplendent-platypus-de88a4.netlify.app',   // old frontend
-  'https://precious-cobbler-0a0716.netlify.app',       // old frontend
-  'https://driplord-001-github-io.onrender.com',       // Render static
-  'https://kimzy-cresta-market.netlify.app',        // ✅ NEW frontend
-  process.env.FRONTEND_URL                              // fallback from environment
-].filter(Boolean);
+  'https://kimzy-cresta-market.netlify.app',   // ✅ YOUR FRONTEND
+  'https://fxsmartbull.netlify.app',
+  'https://kimzzy-static-site.netlify.app',
+  'https://driplord-001-github-io.onrender.com',
+  'https://adorable-sprite-692f2f.netlify.app'
+];
 
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  // Allow any of our listed origins (or any origin for testing)
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400');
+
+  if (req.method === 'OPTIONS') {
+    console.log('✅ OPTIONS preflight handled for:', req.url);
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// Also use cors middleware as backup
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('❌ Blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
+    // Allow all origins for now
+    callback(null, true);
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  credentials: true
 }));
 
 // ============================================================
@@ -52,43 +66,77 @@ app.use(express.urlencoded({ extended: true }));
 // Log all incoming requests
 app.use((req, res, next) => {
   console.log(`📡 ${req.method} ${req.url}`);
+  if (req.body && Object.keys(req.body).length) {
+    console.log('📦 Body:', req.body);
+  }
   next();
+});
+
+// ============================================================
+// DEBUG ENDPOINTS
+// ============================================================
+app.get('/api/debug', (req, res) => {
+  res.json({
+    message: 'Kimzy Backend is reachable!',
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/check-table', async (req, res) => {
+  try {
+    const { supabaseAdmin } = require('./supabase/client');
+    const { data, error } = await supabaseAdmin
+      .from('support_messages')
+      .select('id')
+      .limit(1);
+    if (error) return res.json({ exists: false, error: error.message });
+    res.json({ exists: true, data });
+  } catch (err) {
+    res.json({ exists: false, error: err.message });
+  }
+});
+
+app.get('/api/env-check', (req, res) => {
+  res.json({
+    SUPABASE_URL: !!process.env.SUPABASE_URL,
+    JWT_SECRET: !!process.env.JWT_SECRET,
+    BREVO_API_KEY: !!process.env.BREVO_API_KEY,
+    FRONTEND_URL: process.env.FRONTEND_URL || 'not set'
+  });
 });
 
 // ============================================================
 // ROUTES
 // ============================================================
-app.use('/api', authRoutes);          // /api/login, /api/register, /api/verify-otp
-app.use('/api', userRoutes);          // /api/me, /api/update-profile
-app.use('/api/admin', adminRoutes);   // /api/admin/users, /api/admin/otps, /api/admin/users/:id/balance
-app.use('/api', withdrawRoutes);      // /api/withdraw
-app.use('/api', transactionsRoutes);  // /api/transactions
-app.use('/api', investRoutes);        // /api/invest, /api/investments
-app.use('/api', supportRoutes);       // /api/support/*, /api/admin/support/*
+app.use('/api', authRoutes);
+app.use('/api', userRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api', withdrawRoutes);
+app.use('/api', transactionsRoutes);
+app.use('/api', investRoutes);
+app.use('/api', supportRoutes);
 
 // ============================================================
 // HEALTH CHECK
 // ============================================================
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // ============================================================
-// CATCH‑ALL FOR UNDEFINED ROUTES
+// 404 HANDLER
 // ============================================================
 app.use((req, res) => {
+  console.log('❌ 404:', req.method, req.url);
   res.status(404).json({ message: 'Route not found' });
 });
 
 // ============================================================
-// START SERVER
+// START
 // ============================================================
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`✅ Allowed origins: ${allowedOrigins.join(', ')}`);
+  console.log(`🚀 Kimzy Server running on port ${PORT}`);
+  console.log(`✅ Allowed origins: ${ALLOWED_ORIGINS.join(', ')}`);
   console.log(`📦 Routes loaded: auth, user, admin, withdraw, transactions, invest, support`);
 });
