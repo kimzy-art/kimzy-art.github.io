@@ -16,7 +16,6 @@ router.post('/support/send', verifyToken, async (req, res) => {
   }
 
   try {
-    // Get user email
     const { data: user, error: userError } = await supabaseAdmin
       .from('users')
       .select('email')
@@ -28,117 +27,149 @@ router.post('/support/send', verifyToken, async (req, res) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    // Insert message
     const { data, error } = await supabaseAdmin
       .from('support_messages')
       .insert({
         user_id: userId,
         email: user.email,
         message: message.trim(),
-        is_read: false,
-        status: 'open',
-        priority: 'normal'
+        is_read: false
       })
       .select('id, created_at')
       .single();
 
     if (error) {
-      console.error('❌ Insert error:', error);
-      return res.status(500).json({ message: 'Failed to send message. Error: ' + error.message });
+      console.error('❌ Insert error:', JSON.stringify(error, null, 2));
+      return res.status(500).json({ 
+        message: 'Failed to send message.', 
+        error: error.message,
+        code: error.code,
+        details: error.details
+      });
     }
 
     console.log('✅ Message inserted, ID:', data.id);
     res.status(201).json({ message: 'Message sent successfully.', data });
   } catch (err) {
-    console.error('❌ Support send error:', err);
-    res.status(500).json({ message: 'Internal server error.' });
+    console.error('❌ Send error:', err);
+    res.status(500).json({ message: 'Internal server error: ' + err.message });
   }
 });
 
 // ============================================================
-// USER: Get user's own support messages (with replies)
+// USER: Get user's own support messages
 // ============================================================
 router.get('/support/my-messages', verifyToken, async (req, res) => {
   const userId = req.user.id;
+  console.log(`📥 Fetching messages for user ${userId}`);
 
   try {
     const { data, error } = await supabaseAdmin
       .from('support_messages')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: true })
-      .limit(100); // ✅ Limit to 100 messages
+      .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('❌ Fetch error:', error);
-      return res.status(500).json({ message: 'Failed to fetch messages.' });
+      console.error('❌ Fetch error:', JSON.stringify(error, null, 2));
+      return res.status(500).json({ message: 'Failed to fetch messages.', error: error.message });
     }
 
-    // ✅ Only update is_read if there are unread messages
-    const hasUnread = data.some(m => !m.is_read);
-    if (hasUnread) {
-      await supabaseAdmin
-        .from('support_messages')
-        .update({ is_read: true })
-        .eq('user_id', userId)
-        .eq('is_read', false);
-    }
+    await supabaseAdmin
+      .from('support_messages')
+      .update({ is_read: true })
+      .eq('user_id', userId)
+      .eq('is_read', false);
 
+    console.log(`✅ Found ${data.length} messages for user ${userId}`);
     res.json({ messages: data });
   } catch (err) {
-    console.error('❌ Fetch messages error:', err);
-    res.status(500).json({ message: 'Internal server error.' });
+    console.error('❌ Fetch error:', err);
+    res.status(500).json({ message: 'Internal server error: ' + err.message });
   }
 });
 
 // ============================================================
-// ADMIN: Get all support messages (with user details – single query)
+// ADMIN: Get all support messages
 // ============================================================
 router.get('/admin/support/messages', verifyToken, async (req, res) => {
+  console.log('📥 Admin fetching all support messages');
+  console.log('👤 Requesting user ID:', req.user.id);
+
   try {
-    // Verify admin
+    // Step 1: Verify admin
     const { data: user, error: adminCheck } = await supabaseAdmin
       .from('users')
       .select('email')
       .eq('id', req.user.id)
       .single();
 
-    if (adminCheck || !user) {
+    if (adminCheck) {
+      console.error('❌ Admin check error:', JSON.stringify(adminCheck, null, 2));
+      return res.status(403).json({ message: 'Admin access required.', error: adminCheck.message });
+    }
+
+    if (!user) {
       return res.status(403).json({ message: 'Admin access required.' });
     }
+
+    console.log('👤 User email:', user.email);
 
     const adminEmails = ['admin@gmail.com', 'katejackson00001@gmail.com'];
     if (!adminEmails.includes(user.email)) {
+      console.log('❌ Admin access denied for:', user.email);
       return res.status(403).json({ message: 'Admin access required.' });
     }
 
-    // ✅ Single query with join to users table
+    console.log('✅ Admin access granted');
+
+    // Step 2: Fetch all messages
     const { data, error } = await supabaseAdmin
       .from('support_messages')
-      .select(`
-        *,
-        users (first_name, last_name, email)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(200);
+      .select('*')
+      .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('❌ Admin fetch error:', error);
-      return res.status(500).json({ message: 'Failed to fetch messages.' });
+      console.error('❌ Admin fetch error:', JSON.stringify(error, null, 2));
+      return res.status(500).json({ 
+        message: 'Failed to fetch messages.', 
+        error: error.message,
+        code: error.code,
+        hint: error.hint
+      });
     }
 
-    // Build display name
+    console.log(`✅ Found ${data.length} total messages`);
+
+    // Step 3: Fetch user names
+    const userIds = [...new Set(data.map(m => m.user_id).filter(Boolean))];
+    console.log('📋 Unique user IDs:', userIds.length);
+
+    let userMap = {};
+    if (userIds.length > 0) {
+      const { data: users, error: userError } = await supabaseAdmin
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .in('id', userIds);
+
+      if (userError) {
+        console.error('❌ User details fetch error:', JSON.stringify(userError, null, 2));
+      } else if (users) {
+        users.forEach(u => {
+          userMap[u.id] = `${u.first_name || ''} ${u.last_name || ''} (${u.email})`.trim();
+        });
+      }
+    }
+
     const messagesWithUser = data.map(m => ({
       ...m,
-      userDisplay: m.users
-        ? `${m.users.first_name} ${m.users.last_name} (${m.users.email})`
-        : m.email
+      userDisplay: userMap[m.user_id] || m.email || 'Unknown User'
     }));
 
     res.json({ messages: messagesWithUser });
   } catch (err) {
-    console.error('❌ Admin support messages error:', err);
-    res.status(500).json({ message: 'Internal server error.' });
+    console.error('❌ Admin fetch error:', err);
+    res.status(500).json({ message: 'Internal server error: ' + err.message });
   }
 });
 
@@ -146,10 +177,10 @@ router.get('/admin/support/messages', verifyToken, async (req, res) => {
 // ADMIN: Reply to a support message
 // ============================================================
 router.post('/admin/support/reply', verifyToken, async (req, res) => {
+  console.log('📩 Admin reply request');
   const { messageId, reply } = req.body;
 
   try {
-    // Verify admin
     const { data: user, error: adminCheck } = await supabaseAdmin
       .from('users')
       .select('email')
@@ -181,14 +212,15 @@ router.post('/admin/support/reply', verifyToken, async (req, res) => {
       .single();
 
     if (error) {
-      console.error('❌ Reply error:', error);
-      return res.status(500).json({ message: 'Failed to send reply.' });
+      console.error('❌ Reply error:', JSON.stringify(error, null, 2));
+      return res.status(500).json({ message: 'Failed to send reply.', error: error.message });
     }
 
+    console.log('✅ Reply sent for message ID:', messageId);
     res.json({ message: 'Reply sent successfully.', data });
   } catch (err) {
     console.error('❌ Reply error:', err);
-    res.status(500).json({ message: 'Internal server error.' });
+    res.status(500).json({ message: 'Internal server error: ' + err.message });
   }
 });
 
