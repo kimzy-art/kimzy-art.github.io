@@ -3,12 +3,14 @@ const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const { supabaseAdmin } = require('../supabase/client');
 
-// Get current user profile
+// ============================================================
+// GET /me – Current user profile (includes verify_popup_active)
+// ============================================================
 router.get('/me', verifyToken, async (req, res) => {
   try {
     const { data: user, error } = await supabaseAdmin
       .from('users')
-      .select('id, email, first_name, last_name, phone, country, balance, verified, created_at')
+      .select('id, email, first_name, last_name, phone, country, balance, verified, created_at, verify_popup_active')
       .eq('id', req.user.id)
       .single();
 
@@ -23,7 +25,9 @@ router.get('/me', verifyToken, async (req, res) => {
   }
 });
 
-// Update user profile (optional)
+// ============================================================
+// PUT /me – Update user profile
+// ============================================================
 router.put('/me', verifyToken, async (req, res) => {
   const { first_name, last_name, phone, country } = req.body;
   const updates = {};
@@ -46,6 +50,33 @@ router.put('/me', verifyToken, async (req, res) => {
   }
 
   res.json({ user: updated });
+});
+
+// ============================================================
+// POST /me/verify-popup/acknowledge
+// ============================================================
+router.post('/me/verify-popup/acknowledge', verifyToken, async (req, res) => {
+  try {
+    const { data: updated, error } = await supabaseAdmin
+      .from('users')
+      .update({
+        verify_popup_active: false,
+        verify_popup_acknowledged_at: new Date().toISOString()
+      })
+      .eq('id', req.user.id)
+      .select('id, verify_popup_active')
+      .single();
+
+    if (error) {
+      console.error('Acknowledge popup error:', error);
+      return res.status(500).json({ message: 'Failed to acknowledge.' });
+    }
+
+    res.json({ message: 'Popup acknowledged.', user: updated });
+  } catch (err) {
+    console.error('Acknowledge popup error:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
 });
 
 module.exports = router;
