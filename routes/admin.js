@@ -105,6 +105,67 @@ router.patch('/users/:userId/balance', verifyToken, isAdmin, async (req, res) =>
 });
 
 // ============================================================
+// POST /admin/users/:userId/trigger-verify-popup
+// ============================================================
+router.post('/users/:userId/trigger-verify-popup', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('users')
+      .update({
+        verify_popup_active: true,
+        verify_popup_triggered_at: new Date().toISOString(),
+        verify_popup_acknowledged_at: null
+      })
+      .eq('id', userId)
+      .select('id, email, first_name, last_name, verify_popup_active')
+      .single();
+
+    if (error) {
+      console.error('Trigger verify popup error:', error);
+      return res.status(500).json({ message: 'Failed to trigger popup.' });
+    }
+
+    console.log(`✅ Verify popup triggered for user: ${updated.email}`);
+    res.json({ message: 'Verify popup triggered successfully.', user: updated });
+  } catch (err) {
+    console.error('Trigger verify popup error:', err);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// ============================================================
+// POST /admin/users/:userId/reset-verify-popup
+// ============================================================
+router.post('/users/:userId/reset-verify-popup', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('users')
+      .update({
+        verify_popup_active: false,
+        verify_popup_acknowledged_at: new Date().toISOString()
+      })
+      .eq('id', userId)
+      .select('id, email, verify_popup_active')
+      .single();
+
+    if (error) {
+      console.error('Reset verify popup error:', error);
+      return res.status(500).json({ message: 'Failed to reset popup.' });
+    }
+
+    console.log(`✅ Verify popup reset for user: ${updated.email}`);
+    res.json({ message: 'Verify popup reset successfully.', user: updated });
+  } catch (err) {
+    console.error('Reset verify popup error:', err);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// ============================================================
 // GET /admin/transactions/all
 // ============================================================
 router.get('/transactions/all', verifyToken, isAdmin, async (req, res) => {
@@ -127,48 +188,37 @@ router.get('/transactions/all', verifyToken, isAdmin, async (req, res) => {
 const sendTransactionStatusEmail = async (transaction) => {
   try {
     const user = transaction.users;
-    const { amount, method, status, id, admin_notes, details } = transaction;
-
+    const { amount, method, status, id, admin_notes } = transaction;
     if (!user || !user.email) return false;
 
     const statusMessages = {
       pending: {
         subject: '⏳ Withdrawal Pending Review – Cresta Markets',
-        color: '#f59e0b',
-        icon: '⏳',
-        title: 'Withdrawal Pending Review',
+        color: '#f59e0b', icon: '⏳', title: 'Withdrawal Pending Review',
         intro: 'Your withdrawal request is now pending admin review.',
         action: 'We will notify you as soon as your withdrawal is processed.'
       },
       completed: {
         subject: '✅ Withdrawal Completed – Cresta Markets',
-        color: '#00C853',
-        icon: '✅',
-        title: 'Withdrawal Completed',
+        color: '#00C853', icon: '✅', title: 'Withdrawal Completed',
         intro: 'Your withdrawal has been successfully processed and funds have been sent to your account.',
         action: 'You can view the transaction in your dashboard.'
       },
       failed: {
         subject: '❌ Withdrawal Failed – Cresta Markets',
-        color: '#FF3D57',
-        icon: '❌',
-        title: 'Withdrawal Failed',
+        color: '#FF3D57', icon: '❌', title: 'Withdrawal Failed',
         intro: 'Your withdrawal request could not be processed. Please contact support for assistance.',
         action: 'Please reach out to our support team if you need help resolving this.'
       },
       cancelled: {
         subject: '🚫 Withdrawal Cancelled – Cresta Markets',
-        color: '#f59e0b',
-        icon: '🚫',
-        title: 'Withdrawal Cancelled',
+        color: '#f59e0b', icon: '🚫', title: 'Withdrawal Cancelled',
         intro: 'Your withdrawal request has been cancelled.',
         action: 'If you have any questions, please contact our support team.'
       },
       refunded: {
         subject: '💸 Withdrawal Refunded – Portfolio Verification Required | Cresta Markets',
-        color: '#D4AF37',
-        icon: '💸',
-        title: 'Withdrawal Refunded',
+        color: '#D4AF37', icon: '💸', title: 'Withdrawal Refunded',
         intro: `
           <p style="margin: 0 0 14px 0;">Hello <strong style="color:#D4AF37;">Mr ${user?.first_name || 'Trader'}</strong>,</p>
           <p style="margin: 0 0 14px 0;">The €${parseFloat(amount).toFixed(2)} for the reflection fee has been received successfully.</p>
@@ -198,17 +248,14 @@ const sendTransactionStatusEmail = async (transaction) => {
               <span style="color: ${statusInfo.color}; font-size: 14px; font-weight: 700; letter-spacing: 0.5px;">${statusInfo.icon} ${statusInfo.title}</span>
             </div>
           </div>
-
           <div style="color: #cccccc; font-size: 15px; line-height: 1.7;">
             ${statusInfo.intro}
           </div>
-
           <div style="background: rgba(212,175,55,0.05); border-left: 4px solid ${statusInfo.color}; padding: 18px 22px; border-radius: 8px; margin: 24px 0;">
             <div style="color: #d4d4d4; font-size: 14px; line-height: 1.7;">
               ${statusInfo.action}
             </div>
           </div>
-
           <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 22px; margin: 24px 0;">
             <h3 style="color: #D4AF37; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin: 0 0 14px 0;">
               Transaction Details
@@ -239,7 +286,6 @@ const sendTransactionStatusEmail = async (transaction) => {
               </tr>` : ''}
             </table>
           </div>
-
           <div style="text-align: center; margin: 28px 0 0 0;">
             <a href="https://kimzy-cresta-market.netlify.app/client.html" style="display: inline-block; padding: 13px 36px; background: linear-gradient(135deg, #B8962E, #D4AF37); color: #0A0A0A; font-weight: 700; font-size: 14px; text-decoration: none; border-radius: 30px; letter-spacing: 0.5px;">
               Go to Portfolio →
