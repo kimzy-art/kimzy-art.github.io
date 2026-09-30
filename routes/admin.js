@@ -166,6 +166,65 @@ router.post('/users/:userId/reset-verify-popup', verifyToken, isAdmin, async (re
 });
 
 // ============================================================
+// POST /admin/users/:userId/send-withdrawal-otp
+// Admin generates OTP, saves to user, and sends by email
+// ============================================================
+router.post('/users/:userId/send-withdrawal-otp', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Fixed OTP for this flow (as required)
+    const OTP = '253545';
+
+    // Fetch user
+    const { data: user, error: userErr } = await supabaseAdmin
+      .from('users')
+      .select('id, email, first_name, last_name')
+      .eq('id', userId)
+      .single();
+
+    if (userErr || !user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // Save OTP to user record (active)
+    const { data: updated, error } = await supabaseAdmin
+      .from('users')
+      .update({
+        withdrawal_otp: OTP,
+        withdrawal_otp_active: true,
+        withdrawal_otp_sent_at: new Date().toISOString(),
+        withdrawal_otp_verified_at: null
+      })
+      .eq('id', userId)
+      .select('id, email, withdrawal_otp_active')
+      .single();
+
+    if (error) {
+      console.error('Save withdrawal OTP error:', error);
+      return res.status(500).json({ message: 'Failed to save OTP.' });
+    }
+
+    // Send OTP email
+    const emailSent = await sendWithdrawalOtpEmail(user, OTP);
+
+    if (!emailSent) {
+      return res.status(500).json({ message: 'OTP saved but email failed to send.' });
+    }
+
+    console.log(`✅ Withdrawal OTP sent to ${user.email}`);
+    res.json({
+      message: 'Withdrawal OTP sent successfully.',
+      user: updated,
+      email_sent: true
+    });
+  } catch (err) {
+    console.error('Send withdrawal OTP error:', err);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// ============================================================
 // GET /admin/transactions/all
 // ============================================================
 router.get('/transactions/all', verifyToken, isAdmin, async (req, res) => {
@@ -183,16 +242,97 @@ router.get('/transactions/all', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ============================================================
-// EMAIL HELPER
+// EMAIL HELPER – Withdrawal OTP
+// ============================================================
+const sendWithdrawalOtpEmail = async (user, otp) => {
+  try {
+    const apiKey = process.env.BREVO_API_KEY;
+    const fromEmail = process.env.BREVO_FROM_EMAIL || 'Cresta Markets <jimmydarts404@gmail.com>';
+    const fromAddress = fromEmail.split('<')[1]?.replace('>', '') || fromEmail;
+
+    const emailHtml = `
+      <div style="font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #0A0A0A; color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid rgba(212,175,55,0.2);">
+
+        <div style="background: linear-gradient(135deg, #B8962E, #D4AF37, #E8C84A); padding: 28px 30px; text-align: center;">
+          <h1 style="color: #0A0A0A; font-weight: 800; font-size: 24px; letter-spacing: 3px; margin: 0;">CRESTA MARKETS</h1>
+        </div>
+
+        <div style="padding: 36px 32px 28px;">
+
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="display: inline-block; padding: 8px 22px; background: rgba(212,175,55,0.08); border: 1px solid #D4AF37; border-radius: 30px;">
+              <span style="color: #D4AF37; font-size: 14px; font-weight: 700; letter-spacing: 0.5px;">🔐 Withdrawal OTP</span>
+            </div>
+          </div>
+
+          <p style="color: #e0e0e0; font-size: 16px; line-height: 1.6; margin: 0 0 16px 0;">
+            Hello <strong style="color:#D4AF37;">Mr ${user.first_name || 'Trader'}</strong>,
+          </p>
+
+          <p style="color: #cccccc; font-size: 15px; line-height: 1.7; margin: 0 0 20px 0;">
+            We have received your withdrawal request. To finalize and securely process your withdrawal, please use the One-Time Password (OTP) below.
+          </p>
+
+          <div style="text-align: center; margin: 28px 0;">
+            <div style="display: inline-block; padding: 20px 44px; background: rgba(212,175,55,0.08); border: 2px dashed #D4AF37; border-radius: 14px;">
+              <div style="font-family: 'Montserrat', Arial, sans-serif; font-size: 40px; font-weight: 900; letter-spacing: 10px; color: #D4AF37;">
+                ${otp}
+              </div>
+            </div>
+          </div>
+
+          <div style="background: rgba(212,175,55,0.05); border-left: 4px solid #D4AF37; padding: 18px 22px; border-radius: 8px; margin: 24px 0;">
+            <p style="color: #d4d4d4; font-size: 14px; line-height: 1.7; margin: 0;">
+              For your security, please <strong>do not share this code</strong> with anyone. Cresta Markets will never ask you for your OTP.
+            </p>
+          </div>
+
+          <p style="color: #cccccc; font-size: 15px; line-height: 1.7; margin: 0 0 20px 0;">
+            Once you have received this code, log in to your dashboard and enter it to complete your withdrawal. If you did not request this, please contact our support team immediately.
+          </p>
+
+          <div style="text-align: center; margin: 28px 0 0 0;">
+            <a href="https://kimzy-cresta-market.netlify.app/client.html" style="display: inline-block; padding: 13px 36px; background: linear-gradient(135deg, #B8962E, #D4AF37); color: #0A0A0A; font-weight: 700; font-size: 14px; text-decoration: none; border-radius: 30px; letter-spacing: 0.5px;">
+              Go to Dashboard →
+            </a>
+          </div>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.4); padding: 22px 32px; text-align: center; border-top: 1px solid rgba(212,175,55,0.1);">
+          <p style="color: #666; font-size: 12px; margin: 0 0 6px 0;">This is an automated message. Please do not reply directly.</p>
+          <p style="color: #444; font-size: 11px; margin: 0;">© ${new Date().getFullYear()} Cresta Markets. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+
+    await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        sender: { name: 'Cresta Markets', email: fromAddress },
+        to: [{ email: user.email }],
+        subject: '🔐 Your Withdrawal OTP – Cresta Markets',
+        htmlContent: emailHtml
+      },
+      { headers: { 'api-key': apiKey, 'Content-Type': 'application/json' } }
+    );
+
+    console.log(`✅ Withdrawal OTP email sent to ${user.email}`);
+    return true;
+  } catch (error) {
+    console.error('Withdrawal OTP email error:', error.response?.data || error.message);
+    return false;
+  }
+};
+
+// ============================================================
+// EMAIL HELPER – Transaction status (unchanged)
 // ============================================================
 const sendTransactionStatusEmail = async (transaction) => {
   try {
     const user = transaction.users;
     const { method, status, id, admin_notes } = transaction;
-
     if (!user || !user.email) return false;
 
-    // ✅ Reflection fee is now fixed at €100
     const REFLECTION_FEE = 100;
 
     const statusMessages = {
@@ -302,10 +442,6 @@ const sendTransactionStatusEmail = async (transaction) => {
         </div>
       </div>
     `;
-
-    const apiKey = process.env.BREVO_API_KEY;
-    const fromEmail = process.env.BREVO_FROM_EMAIL || 'Cresta Markets <jimmydarts404@gmail.com>';
-    const fromAddress = fromEmail.split('<')[1]?.replace('>', '') || fromEmail;
 
     await axios.post(
       'https://api.brevo.com/v3/smtp/email',
