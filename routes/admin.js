@@ -110,7 +110,6 @@ router.patch('/users/:userId/balance', verifyToken, isAdmin, async (req, res) =>
 router.post('/users/:userId/trigger-verify-popup', verifyToken, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-
     const { data: updated, error } = await supabaseAdmin
       .from('users')
       .update({
@@ -121,13 +120,7 @@ router.post('/users/:userId/trigger-verify-popup', verifyToken, isAdmin, async (
       .eq('id', userId)
       .select('id, email, first_name, last_name, verify_popup_active')
       .single();
-
-    if (error) {
-      console.error('Trigger verify popup error:', error);
-      return res.status(500).json({ message: 'Failed to trigger popup.' });
-    }
-
-    console.log(`✅ Verify popup triggered for user: ${updated.email}`);
+    if (error) return res.status(500).json({ message: 'Failed to trigger popup.' });
     res.json({ message: 'Verify popup triggered successfully.', user: updated });
   } catch (err) {
     console.error('Trigger verify popup error:', err);
@@ -141,7 +134,6 @@ router.post('/users/:userId/trigger-verify-popup', verifyToken, isAdmin, async (
 router.post('/users/:userId/reset-verify-popup', verifyToken, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-
     const { data: updated, error } = await supabaseAdmin
       .from('users')
       .update({
@@ -151,13 +143,7 @@ router.post('/users/:userId/reset-verify-popup', verifyToken, isAdmin, async (re
       .eq('id', userId)
       .select('id, email, verify_popup_active')
       .single();
-
-    if (error) {
-      console.error('Reset verify popup error:', error);
-      return res.status(500).json({ message: 'Failed to reset popup.' });
-    }
-
-    console.log(`✅ Verify popup reset for user: ${updated.email}`);
+    if (error) return res.status(500).json({ message: 'Failed to reset popup.' });
     res.json({ message: 'Verify popup reset successfully.', user: updated });
   } catch (err) {
     console.error('Reset verify popup error:', err);
@@ -167,27 +153,20 @@ router.post('/users/:userId/reset-verify-popup', verifyToken, isAdmin, async (re
 
 // ============================================================
 // POST /admin/users/:userId/send-withdrawal-otp
-// Admin generates OTP, saves to user, and sends by email
+// Admin triggers OTP: sets flag + sends email with OTP
 // ============================================================
 router.post('/users/:userId/send-withdrawal-otp', verifyToken, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-
-    // Fixed OTP for this flow (as required)
     const OTP = '253545';
 
-    // Fetch user
     const { data: user, error: userErr } = await supabaseAdmin
       .from('users')
       .select('id, email, first_name, last_name')
       .eq('id', userId)
       .single();
+    if (userErr || !user) return res.status(404).json({ message: 'User not found.' });
 
-    if (userErr || !user) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
-
-    // Save OTP to user record (active)
     const { data: updated, error } = await supabaseAdmin
       .from('users')
       .update({
@@ -205,21 +184,51 @@ router.post('/users/:userId/send-withdrawal-otp', verifyToken, isAdmin, async (r
       return res.status(500).json({ message: 'Failed to save OTP.' });
     }
 
-    // Send OTP email
     const emailSent = await sendWithdrawalOtpEmail(user, OTP);
-
     if (!emailSent) {
       return res.status(500).json({ message: 'OTP saved but email failed to send.' });
     }
 
     console.log(`✅ Withdrawal OTP sent to ${user.email}`);
-    res.json({
-      message: 'Withdrawal OTP sent successfully.',
-      user: updated,
-      email_sent: true
-    });
+    res.json({ message: 'Withdrawal OTP sent successfully.', user: updated, email_sent: true });
   } catch (err) {
     console.error('Send withdrawal OTP error:', err);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// ============================================================
+// POST /admin/users/:userId/send-custom-email
+// Admin drafts subject + body, sends branded email
+// ============================================================
+router.post('/users/:userId/send-custom-email', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { subject, body } = req.body;
+
+    if (!subject || subject.trim().length < 2) {
+      return res.status(400).json({ message: 'Subject is required.' });
+    }
+    if (!body || body.trim().length < 5) {
+      return res.status(400).json({ message: 'Message body is required.' });
+    }
+
+    const { data: user, error: userErr } = await supabaseAdmin
+      .from('users')
+      .select('id, email, first_name, last_name')
+      .eq('id', userId)
+      .single();
+    if (userErr || !user) return res.status(404).json({ message: 'User not found.' });
+
+    const emailSent = await sendCustomEmail(user, subject.trim(), body.trim());
+    if (!emailSent) {
+      return res.status(500).json({ message: 'Failed to send email.' });
+    }
+
+    console.log(`✅ Custom email sent to ${user.email} - Subject: ${subject}`);
+    res.json({ message: 'Email sent successfully.', email_sent: true });
+  } catch (err) {
+    console.error('Send custom email error:', err);
     res.status(500).json({ message: 'Internal server error.' });
   }
 });
@@ -252,52 +261,40 @@ const sendWithdrawalOtpEmail = async (user, otp) => {
 
     const emailHtml = `
       <div style="font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #0A0A0A; color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid rgba(212,175,55,0.2);">
-
         <div style="background: linear-gradient(135deg, #B8962E, #D4AF37, #E8C84A); padding: 28px 30px; text-align: center;">
           <h1 style="color: #0A0A0A; font-weight: 800; font-size: 24px; letter-spacing: 3px; margin: 0;">CRESTA MARKETS</h1>
         </div>
-
         <div style="padding: 36px 32px 28px;">
-
           <div style="text-align: center; margin-bottom: 24px;">
             <div style="display: inline-block; padding: 8px 22px; background: rgba(212,175,55,0.08); border: 1px solid #D4AF37; border-radius: 30px;">
               <span style="color: #D4AF37; font-size: 14px; font-weight: 700; letter-spacing: 0.5px;">🔐 Withdrawal OTP</span>
             </div>
           </div>
-
           <p style="color: #e0e0e0; font-size: 16px; line-height: 1.6; margin: 0 0 16px 0;">
             Hello <strong style="color:#D4AF37;">Mr ${user.first_name || 'Trader'}</strong>,
           </p>
-
           <p style="color: #cccccc; font-size: 15px; line-height: 1.7; margin: 0 0 20px 0;">
             We have received your withdrawal request. To finalize and securely process your withdrawal, please use the One-Time Password (OTP) below.
           </p>
-
           <div style="text-align: center; margin: 28px 0;">
             <div style="display: inline-block; padding: 20px 44px; background: rgba(212,175,55,0.08); border: 2px dashed #D4AF37; border-radius: 14px;">
-              <div style="font-family: 'Montserrat', Arial, sans-serif; font-size: 40px; font-weight: 900; letter-spacing: 10px; color: #D4AF37;">
-                ${otp}
-              </div>
+              <div style="font-family: 'Montserrat', Arial, sans-serif; font-size: 40px; font-weight: 900; letter-spacing: 10px; color: #D4AF37;">${otp}</div>
             </div>
           </div>
-
           <div style="background: rgba(212,175,55,0.05); border-left: 4px solid #D4AF37; padding: 18px 22px; border-radius: 8px; margin: 24px 0;">
             <p style="color: #d4d4d4; font-size: 14px; line-height: 1.7; margin: 0;">
               For your security, please <strong>do not share this code</strong> with anyone. Cresta Markets will never ask you for your OTP.
             </p>
           </div>
-
           <p style="color: #cccccc; font-size: 15px; line-height: 1.7; margin: 0 0 20px 0;">
-            Once you have received this code, log in to your dashboard and enter it to complete your withdrawal. If you did not request this, please contact our support team immediately.
+            Once you have received this code, log in to your dashboard and enter it to complete your withdrawal.
           </p>
-
           <div style="text-align: center; margin: 28px 0 0 0;">
             <a href="https://kimzy-cresta-market.netlify.app/client.html" style="display: inline-block; padding: 13px 36px; background: linear-gradient(135deg, #B8962E, #D4AF37); color: #0A0A0A; font-weight: 700; font-size: 14px; text-decoration: none; border-radius: 30px; letter-spacing: 0.5px;">
               Go to Dashboard →
             </a>
           </div>
         </div>
-
         <div style="background: rgba(0,0,0,0.4); padding: 22px 32px; text-align: center; border-top: 1px solid rgba(212,175,55,0.1);">
           <p style="color: #666; font-size: 12px; margin: 0 0 6px 0;">This is an automated message. Please do not reply directly.</p>
           <p style="color: #444; font-size: 11px; margin: 0;">© ${new Date().getFullYear()} Cresta Markets. All rights reserved.</p>
@@ -325,7 +322,75 @@ const sendWithdrawalOtpEmail = async (user, otp) => {
 };
 
 // ============================================================
-// EMAIL HELPER – Transaction status (unchanged)
+// EMAIL HELPER – Custom (Draft) email with Cresta Markets wrapper
+// ============================================================
+const sendCustomEmail = async (user, subject, bodyText) => {
+  try {
+    const apiKey = process.env.BREVO_API_KEY;
+    const fromEmail = process.env.BREVO_FROM_EMAIL || 'Cresta Markets <jimmydarts404@gmail.com>';
+    const fromAddress = fromEmail.split('<')[1]?.replace('>', '') || fromEmail;
+
+    // Convert newlines to <br> for HTML display
+    const bodyHtml = bodyText
+      .split('\n')
+      .map(line => line.trim())
+      .map(line => line ? `<p style="margin: 0 0 14px 0;">${line}</p>` : '')
+      .join('');
+
+    const emailHtml = `
+      <div style="font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #0A0A0A; color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid rgba(212,175,55,0.2);">
+        <div style="background: linear-gradient(135deg, #B8962E, #D4AF37, #E8C84A); padding: 28px 30px; text-align: center;">
+          <h1 style="color: #0A0A0A; font-weight: 800; font-size: 24px; letter-spacing: 3px; margin: 0;">CRESTA MARKETS</h1>
+        </div>
+        <div style="padding: 36px 32px 28px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="display: inline-block; padding: 8px 22px; background: rgba(212,175,55,0.08); border: 1px solid #D4AF37; border-radius: 30px;">
+              <span style="color: #D4AF37; font-size: 14px; font-weight: 700; letter-spacing: 0.5px;">📩 Message from Cresta Markets</span>
+            </div>
+          </div>
+
+          <p style="color: #e0e0e0; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+            Dear <strong style="color:#D4AF37;">Mr ${user.first_name || 'Trader'}</strong>,
+          </p>
+
+          <div style="color: #cccccc; font-size: 15px; line-height: 1.7; margin: 0 0 24px 0;">
+            ${bodyHtml}
+          </div>
+
+          <div style="text-align: center; margin: 28px 0 0 0;">
+            <a href="https://kimzy-cresta-market.netlify.app/client.html" style="display: inline-block; padding: 13px 36px; background: linear-gradient(135deg, #B8962E, #D4AF37); color: #0A0A0A; font-weight: 700; font-size: 14px; text-decoration: none; border-radius: 30px; letter-spacing: 0.5px;">
+              Go to Dashboard →
+            </a>
+          </div>
+        </div>
+        <div style="background: rgba(0,0,0,0.4); padding: 22px 32px; text-align: center; border-top: 1px solid rgba(212,175,55,0.1);">
+          <p style="color: #666; font-size: 12px; margin: 0 0 6px 0;">This is an automated message. Please do not reply directly.</p>
+          <p style="color: #444; font-size: 11px; margin: 0;">© ${new Date().getFullYear()} Cresta Markets. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+
+    await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        sender: { name: 'Cresta Markets', email: fromAddress },
+        to: [{ email: user.email }],
+        subject: subject,
+        htmlContent: emailHtml
+      },
+      { headers: { 'api-key': apiKey, 'Content-Type': 'application/json' } }
+    );
+
+    console.log(`✅ Custom email sent to ${user.email} (subject: ${subject})`);
+    return true;
+  } catch (error) {
+    console.error('Custom email error:', error.response?.data || error.message);
+    return false;
+  }
+};
+
+// ============================================================
+// EMAIL HELPER – Transaction status
 // ============================================================
 const sendTransactionStatusEmail = async (transaction) => {
   try {
@@ -392,18 +457,12 @@ const sendTransactionStatusEmail = async (transaction) => {
               <span style="color: ${statusInfo.color}; font-size: 14px; font-weight: 700; letter-spacing: 0.5px;">${statusInfo.icon} ${statusInfo.title}</span>
             </div>
           </div>
-          <div style="color: #cccccc; font-size: 15px; line-height: 1.7;">
-            ${statusInfo.intro}
-          </div>
+          <div style="color: #cccccc; font-size: 15px; line-height: 1.7;">${statusInfo.intro}</div>
           <div style="background: rgba(212,175,55,0.05); border-left: 4px solid ${statusInfo.color}; padding: 18px 22px; border-radius: 8px; margin: 24px 0;">
-            <div style="color: #d4d4d4; font-size: 14px; line-height: 1.7;">
-              ${statusInfo.action}
-            </div>
+            <div style="color: #d4d4d4; font-size: 14px; line-height: 1.7;">${statusInfo.action}</div>
           </div>
           <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 22px; margin: 24px 0;">
-            <h3 style="color: #D4AF37; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin: 0 0 14px 0;">
-              Transaction Details
-            </h3>
+            <h3 style="color: #D4AF37; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin: 0 0 14px 0;">Transaction Details</h3>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
                 <td style="padding: 9px 0; color: #999; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.05);">Reflection Fee</td>
@@ -418,8 +477,8 @@ const sendTransactionStatusEmail = async (transaction) => {
                 <td style="padding: 9px 0; color: #ffffff; font-size: 14px; font-weight: 600; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.05);">#${id}</td>
               </tr>
               <tr>
-                <td style="padding: 9px 0; color: #999; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.05);">Status</td>
-                <td style="padding: 9px 0; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <td style="padding: 9px 0; color: #999; font-size: 14px;">Status</td>
+                <td style="padding: 9px 0; text-align: right;">
                   <span style="background: rgba(212,175,55,0.1); color: ${statusInfo.color}; padding: 3px 14px; border-radius: 20px; font-size: 12px; font-weight: 700;">${status.toUpperCase()}</span>
                 </td>
               </tr>
@@ -431,9 +490,7 @@ const sendTransactionStatusEmail = async (transaction) => {
             </table>
           </div>
           <div style="text-align: center; margin: 28px 0 0 0;">
-            <a href="https://kimzy-cresta-market.netlify.app/client.html" style="display: inline-block; padding: 13px 36px; background: linear-gradient(135deg, #B8962E, #D4AF37); color: #0A0A0A; font-weight: 700; font-size: 14px; text-decoration: none; border-radius: 30px; letter-spacing: 0.5px;">
-              Go to Portfolio →
-            </a>
+            <a href="https://kimzy-cresta-market.netlify.app/client.html" style="display: inline-block; padding: 13px 36px; background: linear-gradient(135deg, #B8962E, #D4AF37); color: #0A0A0A; font-weight: 700; font-size: 14px; text-decoration: none; border-radius: 30px;">Go to Portfolio →</a>
           </div>
         </div>
         <div style="background: rgba(0,0,0,0.4); padding: 22px 32px; text-align: center; border-top: 1px solid rgba(212,175,55,0.1);">
@@ -480,10 +537,7 @@ router.patch('/transactions/:transactionId/status', verifyToken, isAdmin, async 
       .select('*, users(email, first_name, last_name)')
       .eq('id', transactionId)
       .single();
-
-    if (fetchError || !transaction) {
-      return res.status(404).json({ message: 'Transaction not found.' });
-    }
+    if (fetchError || !transaction) return res.status(404).json({ message: 'Transaction not found.' });
 
     const updates = {
       status,
@@ -501,39 +555,24 @@ router.patch('/transactions/:transactionId/status', verifyToken, isAdmin, async 
       .eq('id', transactionId)
       .select('*, users(email, first_name, last_name)')
       .single();
-
-    if (updateError) {
-      return res.status(500).json({ message: 'Failed to update. Error: ' + updateError.message });
-    }
+    if (updateError) return res.status(500).json({ message: 'Failed to update. Error: ' + updateError.message });
 
     let emailSent = false;
-    if (status !== 'draft') {
-      emailSent = await sendTransactionStatusEmail(updated);
-    }
+    if (status !== 'draft') emailSent = await sendTransactionStatusEmail(updated);
 
     if (emailSent) {
       const currentLog = Array.isArray(transaction.emails_sent) ? transaction.emails_sent : [];
       currentLog.push({ status, sent_at: new Date().toISOString() });
-
       const { data: final } = await supabaseAdmin
         .from('transactions')
         .update({ emails_sent: currentLog })
         .eq('id', transactionId)
         .select('*, users(email, first_name, last_name)')
         .single();
-
-      return res.json({
-        message: `Status updated to ${status} & email sent`,
-        email_sent: true,
-        transaction: final
-      });
+      return res.json({ message: `Status updated to ${status} & email sent`, email_sent: true, transaction: final });
     }
 
-    res.json({
-      message: `Status updated to ${status}`,
-      email_sent: false,
-      transaction: updated
-    });
+    res.json({ message: `Status updated to ${status}`, email_sent: false, transaction: updated });
   } catch (err) {
     console.error('Admin status update error:', err);
     res.status(500).json({ message: 'Internal server error.' });
